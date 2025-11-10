@@ -85,7 +85,9 @@ class Controls {
   }
 
   getInput() {
-    return this.inputBuffer.shift() || null;
+    // Don't use || because 0 is falsy! Check for undefined explicitly
+    const action = this.inputBuffer.shift();
+    return action !== undefined ? action : null;
   }
 
   hasInput() {

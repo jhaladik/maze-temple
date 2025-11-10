@@ -255,14 +255,15 @@ CONFIG.ACTIONS = {
 
   // Deltas for movement
   DELTAS: [
-    [0, -1],  // UP
-    [0, 1],   // DOWN
-    [-1, 0],  // LEFT
-    [1, 0],   // RIGHT
+    [0, -1],  // UP - move up (decrease y)
+    [0, 1],   // DOWN - move down (increase y)
+    [-1, 0],  // LEFT - move left (decrease x)
+    [1, 0],   // RIGHT - move right (increase x)
   ],
 
   NAMES: ['UP', 'DOWN', 'LEFT', 'RIGHT'],
 };
+
 
 // Cell types
 CONFIG.CELL_TYPES = {

@@ -27,13 +27,13 @@ class Renderer {
     const offsetX = (this.canvas.width - maze.size * this.cellSize) / 2;
     const offsetY = (this.canvas.height - maze.size * this.cellSize) / 2;
 
-    // Draw heatmap first (if enabled)
+    // Draw maze base layer
+    this.drawMaze(maze, offsetX, offsetY);
+
+    // Draw heatmap on top (if enabled) - semi-transparent overlay
     if (this.showHeatmap) {
       this.drawHeatmap(maze, offsetX, offsetY);
     }
-
-    // Draw maze
-    this.drawMaze(maze, offsetX, offsetY);
 
     // Draw path (if enabled)
     if (this.showPath && player.stats.path.length > 1) {
@@ -72,6 +72,9 @@ class Renderer {
 
     // Draw human side (left)
     this.drawMaze(humanMaze, leftOffsetX, offsetY);
+    if (this.showHeatmap) {
+      this.drawHeatmap(humanMaze, leftOffsetX, offsetY);
+    }
     if (this.showPath) {
       this.drawPath(humanPlayer.stats.path, leftOffsetX, offsetY);
     }
@@ -79,6 +82,9 @@ class Renderer {
 
     // Draw AI side (right)
     this.drawMaze(aiMaze, rightOffsetX, offsetY);
+    if (this.showHeatmap) {
+      this.drawHeatmap(aiMaze, rightOffsetX, offsetY);
+    }
     if (this.showPath) {
       this.drawPath(aiAgent.stats.path, rightOffsetX, offsetY);
     }
@@ -230,7 +236,8 @@ class Renderer {
         const visits = maze.visitedCells[y][x];
         if (visits > 0) {
           const intensity = visits / maxVisits;
-          const alpha = intensity * 0.5;
+          // Increased alpha range: 0.3 to 0.7 for better visibility
+          const alpha = 0.3 + (intensity * 0.4);
 
           this.ctx.fillStyle = `rgba(255, 0, 0, ${alpha})`;
           this.ctx.fillRect(

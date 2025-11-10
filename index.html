@@ -119,6 +119,10 @@
 
         document.getElementById('toggle-heatmap-btn').addEventListener('click', () => {
           this.renderer.toggleHeatmap();
+          // Update button text to show current state
+          const btn = document.getElementById('toggle-heatmap-btn');
+          btn.textContent = this.renderer.showHeatmap ? 'Heatmap: ON' : 'Heatmap: OFF';
+          btn.classList.toggle('active', this.renderer.showHeatmap);
         });
 
         document.getElementById('pause-btn').addEventListener('click', () => {
@@ -208,6 +212,12 @@
         this.currentMode = 'play';
         this.currentDifficulty = difficulty;
 
+        // Stop any existing game loops
+        if (this.gameLoop) {
+          cancelAnimationFrame(this.gameLoop);
+          this.gameLoop = null;
+        }
+
         // Generate maze
         const mazeGenerator = new MazeGenerator({
           difficulty: difficulty,
@@ -228,6 +238,11 @@
         document.getElementById('stats-panel').classList.remove('hidden');
         document.getElementById('back-to-menu-btn').classList.remove('hidden');
         document.getElementById('toggle-heatmap-btn').classList.remove('hidden');
+
+        // Initialize heatmap button state
+        const heatmapBtn = document.getElementById('toggle-heatmap-btn');
+        heatmapBtn.textContent = this.renderer.showHeatmap ? 'Heatmap: ON' : 'Heatmap: OFF';
+        heatmapBtn.classList.toggle('active', this.renderer.showHeatmap);
 
         // Start game loop
         this.startPlayLoop();
@@ -295,6 +310,12 @@
         this.currentDifficulty = difficulty;
         this.currentAgentType = agentType;
 
+        // Stop any existing game loops
+        if (this.gameLoop) {
+          cancelAnimationFrame(this.gameLoop);
+          this.gameLoop = null;
+        }
+
         // Cleanup old agent and training manager if they exist
         if (this.trainingManager) {
           this.trainingManager.stopTraining();
@@ -315,6 +336,11 @@
         document.getElementById('toggle-heatmap-btn').classList.remove('hidden');
         document.getElementById('pause-btn').classList.remove('hidden');
 
+        // Initialize heatmap button state
+        const heatmapBtn = document.getElementById('toggle-heatmap-btn');
+        heatmapBtn.textContent = this.renderer.showHeatmap ? 'Heatmap: ON' : 'Heatmap: OFF';
+        heatmapBtn.classList.toggle('active', this.renderer.showHeatmap);
+
         // Setup callbacks
         this.trainingManager.onTrainingUpdate = (agent, steps) => {
           this.renderer.render(agent.maze, agent);
@@ -333,6 +359,12 @@
         this.currentMode = 'battle';
         this.currentDifficulty = difficulty;
         this.currentAgentType = agentType;
+
+        // Stop any existing game loops (prevents input consumption conflicts)
+        if (this.gameLoop) {
+          cancelAnimationFrame(this.gameLoop);
+          this.gameLoop = null;
+        }
 
         // Cleanup old agent if it exists
         if (this.aiAgent && this.aiAgent.dqn) {
@@ -362,6 +394,11 @@
         document.getElementById('stats-panel').classList.remove('hidden');
         document.getElementById('back-to-menu-btn').classList.remove('hidden');
         document.getElementById('toggle-heatmap-btn').classList.remove('hidden');
+
+        // Initialize heatmap button state
+        const heatmapBtnBattle = document.getElementById('toggle-heatmap-btn');
+        heatmapBtnBattle.textContent = this.renderer.showHeatmap ? 'Heatmap: ON' : 'Heatmap: OFF';
+        heatmapBtnBattle.classList.toggle('active', this.renderer.showHeatmap);
 
         // Setup callbacks
         this.battle.onUpdate = (status) => {
@@ -430,6 +467,12 @@
         this.currentMode = 'compare';
         this.currentDifficulty = difficulty;
 
+        // Stop any existing game loops
+        if (this.gameLoop) {
+          cancelAnimationFrame(this.gameLoop);
+          this.gameLoop = null;
+        }
+
         // Cleanup old agents
         this.aiAgents.forEach(agent => {
           if (agent && agent.dqn) {
@@ -449,7 +492,13 @@
         document.getElementById('canvas-container').classList.remove('hidden');
         document.getElementById('stats-panel').classList.remove('hidden');
         document.getElementById('back-to-menu-btn').classList.remove('hidden');
+        document.getElementById('toggle-heatmap-btn').classList.remove('hidden');
         document.getElementById('pause-btn').classList.remove('hidden');
+
+        // Initialize heatmap button state
+        const heatmapBtnCompare = document.getElementById('toggle-heatmap-btn');
+        heatmapBtnCompare.textContent = this.renderer.showHeatmap ? 'Heatmap: ON' : 'Heatmap: OFF';
+        heatmapBtnCompare.classList.toggle('active', this.renderer.showHeatmap);
 
         // Show comparison stats
         this.statsDisplay.container.innerHTML = `
@@ -497,6 +546,12 @@
                   if (batch) {
                     await agent.dqn.train(batch);
                   }
+                }
+
+                // Render current agent's progress (every 10 steps for performance)
+                if (steps % 10 === 0) {
+                  this.renderer.render(agent.maze, agent);
+                  await new Promise(resolve => setTimeout(resolve, 10));
                 }
               }
               steps++;

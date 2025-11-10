@@ -68,6 +68,12 @@ body {
   background: #666;
 }
 
+.btn-secondary.active {
+  background: #4CAF50;
+  color: white;
+  font-weight: bold;
+}
+
 .btn-danger {
   background: #f44336;
   color: white;
