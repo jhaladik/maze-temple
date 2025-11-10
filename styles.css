@@ -292,6 +292,137 @@ body {
   margin-top: 15px;
 }
 
+/* Agent Selector */
+.agent-selector {
+  text-align: center;
+  padding: 40px;
+}
+
+.agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+  max-width: 1200px;
+  margin: 30px auto;
+}
+
+.agent-card {
+  background: #1a1a1a;
+  border: 2px solid #333;
+  border-radius: 8px;
+  padding: 25px;
+  transition: all 0.3s;
+  text-align: left;
+}
+
+.agent-card:hover {
+  border-color: #FFD700;
+  transform: translateY(-3px);
+}
+
+.agent-icon {
+  font-size: 48px;
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.agent-spec {
+  color: #FFD700;
+  font-size: 13px;
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+.agent-stats {
+  margin: 15px 0;
+}
+
+.stat-bar {
+  margin: 8px 0;
+  font-size: 12px;
+}
+
+.stat-bar .label {
+  display: inline-block;
+  width: 80px;
+  color: #aaa;
+}
+
+.stat-bar .bar {
+  display: inline-block;
+  width: calc(100% - 85px);
+  height: 8px;
+  background: #333;
+  border-radius: 4px;
+  vertical-align: middle;
+}
+
+.stat-bar .fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4CAF50, #FFD700);
+  border-radius: 4px;
+  transition: width 0.3s;
+}
+
+.agent-desc {
+  color: #aaa;
+  font-size: 13px;
+  margin: 15px 0;
+  min-height: 40px;
+}
+
+.btn-agent {
+  width: 100%;
+  padding: 10px;
+  background: #FFD700;
+  color: #000;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  margin-top: 10px;
+}
+
+.btn-agent:hover {
+  background: #FFC700;
+}
+
+/* Compare Mode Stats */
+.compare-stats {
+  padding: 10px;
+}
+
+.compare-stats h3 {
+  color: #FFD700;
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+#compare-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.agent-result {
+  background: #0a0a0a;
+  padding: 15px;
+  border-radius: 8px;
+  border: 2px solid #333;
+}
+
+.agent-result strong {
+  color: #FFD700;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.agent-result div {
+  color: #aaa;
+  padding: 3px 0;
+  font-size: 13px;
+}
+
 /* Battle Results */
 .battle-results {
   text-align: center;

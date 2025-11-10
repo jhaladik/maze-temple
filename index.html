@@ -47,6 +47,7 @@
   <script src="core/agents.js"></script>
   <script src="core/training.js"></script>
   <script src="core/battle.js"></script>
+  <script src="core/knowledge-transfer.js"></script>
 
   <!-- Human -->
   <script src="human/controls.js"></script>
@@ -87,10 +88,13 @@
         this.maze = null;
         this.humanPlayer = null;
         this.aiAgent = null;
+        this.aiAgents = []; // For comparison mode
         this.trainingManager = null;
         this.battle = null;
+        this.knowledgeTransfer = new KnowledgeTransfer();
 
         this.gameLoop = null;
+        this.currentAgentType = 'explorer'; // Default agent type
 
         // Setup
         this.setupUI();
@@ -165,13 +169,23 @@
 
           case 'watch':
             this.modeSelector.showDifficultySelector(mode, (difficulty) => {
-              this.startWatchMode(difficulty);
+              this.modeSelector.showAgentSelector(mode, difficulty, (agentType) => {
+                this.startWatchMode(difficulty, agentType);
+              });
             });
             break;
 
           case 'battle':
             this.modeSelector.showDifficultySelector(mode, (difficulty) => {
-              this.startBattleMode(difficulty);
+              this.modeSelector.showAgentSelector(mode, difficulty, (agentType) => {
+                this.startBattleMode(difficulty, agentType);
+              });
+            });
+            break;
+
+          case 'compare':
+            this.modeSelector.showDifficultySelector(mode, (difficulty) => {
+              this.startCompareMode(difficulty);
             });
             break;
 
@@ -185,7 +199,7 @@
 
           case 'settings':
             // TODO: Implement settings
-            alert('Settings coming in Phase 3!');
+            alert('Settings coming soon!');
             break;
         }
       }
@@ -276,9 +290,10 @@
         this.showMainMenu();
       }
 
-      async startWatchMode(difficulty) {
+      async startWatchMode(difficulty, agentType = 'explorer') {
         this.currentMode = 'watch';
         this.currentDifficulty = difficulty;
+        this.currentAgentType = agentType;
 
         // Cleanup old agent and training manager if they exist
         if (this.trainingManager) {
@@ -288,8 +303,8 @@
           this.aiAgent.dqn.dispose();
         }
 
-        // Initialize AI agent
-        this.aiAgent = new Agent(null, 'explorer', this.demoRecorder);
+        // Initialize AI agent with selected type
+        this.aiAgent = new Agent(null, agentType, this.demoRecorder);
         this.trainingManager = new TrainingManager(this.aiAgent, this.demoRecorder);
 
         // Show game UI
@@ -314,9 +329,10 @@
         await this.trainingManager.startTraining();
       }
 
-      startBattleMode(difficulty) {
+      startBattleMode(difficulty, agentType = 'explorer') {
         this.currentMode = 'battle';
         this.currentDifficulty = difficulty;
+        this.currentAgentType = agentType;
 
         // Cleanup old agent if it exists
         if (this.aiAgent && this.aiAgent.dqn) {
@@ -335,7 +351,7 @@
         this.humanPlayer = new HumanPlayer(humanMaze, this.controls);
 
         const aiMaze = new Maze(mazeData);
-        this.aiAgent = new Agent(aiMaze, 'explorer', null);
+        this.aiAgent = new Agent(aiMaze, agentType, null);
 
         // Create battle
         this.battle = new MazeBattle(mazeData, this.humanPlayer, this.aiAgent);
@@ -390,8 +406,8 @@
         );
 
         this.leaderboard.addEntry(
-          'explorer',
-          'AI Explorer',
+          this.currentAgentType,
+          `AI ${this.currentAgentType.charAt(0).toUpperCase() + this.currentAgentType.slice(1)}`,
           results.ai.performance,
           this.battle.aiMaze
         );
@@ -401,12 +417,129 @@
 
         // Setup result buttons
         document.getElementById('rematch-btn')?.addEventListener('click', () => {
-          this.startBattleMode(this.currentDifficulty);
+          this.startBattleMode(this.currentDifficulty, this.currentAgentType);
         });
 
         document.getElementById('menu-btn')?.addEventListener('click', () => {
           this.showMainMenu();
         });
+      }
+
+      // Compare Mode: Train all 3 agents simultaneously
+      async startCompareMode(difficulty) {
+        this.currentMode = 'compare';
+        this.currentDifficulty = difficulty;
+
+        // Cleanup old agents
+        this.aiAgents.forEach(agent => {
+          if (agent && agent.dqn) {
+            agent.dqn.dispose();
+          }
+        });
+        this.aiAgents = [];
+
+        // Create 3 agents
+        const agentTypes = ['explorer', 'collector', 'protector'];
+        agentTypes.forEach(type => {
+          this.aiAgents.push(new Agent(null, type, this.demoRecorder));
+        });
+
+        // Show game UI
+        document.getElementById('mode-selector').innerHTML = '';
+        document.getElementById('canvas-container').classList.remove('hidden');
+        document.getElementById('stats-panel').classList.remove('hidden');
+        document.getElementById('back-to-menu-btn').classList.remove('hidden');
+        document.getElementById('pause-btn').classList.remove('hidden');
+
+        // Show comparison stats
+        this.statsDisplay.container.innerHTML = `
+          <div class="compare-stats">
+            <h3>Agent Comparison</h3>
+            <div id="compare-metrics"></div>
+          </div>
+        `;
+
+        // Train all agents concurrently
+        console.log('🏛️ Starting comparison training for 3 agents...');
+
+        // Simple sequential training with visualization
+        for (let episode = 1; episode <= 50; episode++) {
+          // Generate same maze for fair comparison
+          const mazeGenerator = new MazeGenerator({
+            difficulty: difficulty,
+            seed: Date.now() + episode
+          });
+          const mazeData = mazeGenerator.generate();
+
+          // Train each agent on the same maze
+          const results = [];
+          for (let i = 0; i < this.aiAgents.length; i++) {
+            const agent = this.aiAgents[i];
+            const maze = new Maze(mazeData);
+            agent.reset(maze);
+            agent.training = true;
+
+            // Episode rollout
+            let steps = 0;
+            let totalReward = 0;
+            while (agent.active && steps < CONFIG.REWARDS.MAX_STEPS) {
+              const state = agent.getState();
+              const action = agent.selectAction(this.demoRecorder.getRelevantDemos(maze, agent.agentType, 5));
+              const result = agent.executeAction(action);
+
+              if (result && result.valid) {
+                totalReward += result.reward;
+                agent.replayBuffer.add(state, action, result.reward, result.nextState, result.done);
+
+                // Train if buffer ready
+                if (agent.replayBuffer.isReady()) {
+                  const batch = agent.replayBuffer.sample(CONFIG.DQN.BATCH_SIZE);
+                  if (batch) {
+                    await agent.dqn.train(batch);
+                  }
+                }
+              }
+              steps++;
+            }
+
+            agent.dqn.decayEpsilon();
+            agent.dqn.decayImitation();
+
+            results.push({
+              type: agent.agentType,
+              completed: agent.stats.completed,
+              score: agent.stats.score,
+              steps: agent.stats.steps,
+              reward: totalReward
+            });
+          }
+
+          // Update display
+          if (episode % 5 === 0) {
+            this.updateCompareDisplay(episode, results);
+          }
+        }
+
+        console.log('✓ Comparison training complete');
+        alert('Comparison complete! Check the stats panel for results.');
+      }
+
+      updateCompareDisplay(episode, results) {
+        const container = document.getElementById('compare-metrics');
+        if (!container) return;
+
+        container.innerHTML = `
+          <p>Episode: ${episode}</p>
+          ${results.map(r => `
+            <div class="agent-result">
+              <strong>${r.type.toUpperCase()}</strong>
+              <div>Completed: ${r.completed ? '✓' : '✗'}</div>
+              <div>Score: ${r.score.toFixed(0)}</div>
+              <div>Steps: ${r.steps}</div>
+              <div>Reward: ${r.reward.toFixed(1)}</div>
+            </div>
+          `).join('')}
+        `;
       }
 
       showLeaderboard() {

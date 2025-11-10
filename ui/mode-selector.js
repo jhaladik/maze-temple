@@ -49,6 +49,13 @@ class ModeSelector {
             <button class="btn-mode">View Scores</button>
           </div>
 
+          <div class="mode-card" data-mode="compare">
+            <div class="mode-icon">📊</div>
+            <h3>Compare Agents</h3>
+            <p>Train multiple AI agents side-by-side</p>
+            <button class="btn-mode">Compare</button>
+          </div>
+
           <div class="mode-card" data-mode="settings">
             <div class="mode-icon">⚙️</div>
             <h3>Settings</h3>
@@ -131,6 +138,77 @@ class ModeSelector {
 
     document.getElementById('back-btn')?.addEventListener('click', () => {
       this.show();
+    });
+  }
+
+  // Show agent selector (for Watch/Battle/Compare modes)
+  showAgentSelector(mode, difficulty, callback) {
+    this.container.innerHTML = `
+      <div class="agent-selector">
+        <h2>Select AI Agent Type</h2>
+        <p class="subtitle">Each agent specializes in different strategies</p>
+
+        <div class="agent-grid">
+          <div class="agent-card" data-agent="explorer">
+            <div class="agent-icon">🔍</div>
+            <h3>Explorer</h3>
+            <p class="agent-spec">Navigation Specialist</p>
+            <div class="agent-stats">
+              <div class="stat-bar"><span class="label">Navigation:</span><div class="bar"><div class="fill" style="width:90%"></div></div></div>
+              <div class="stat-bar"><span class="label">Gems:</span><div class="bar"><div class="fill" style="width:5%"></div></div></div>
+              <div class="stat-bar"><span class="label">Safety:</span><div class="bar"><div class="fill" style="width:5%"></div></div></div>
+            </div>
+            <p class="agent-desc">Finds optimal paths quickly. Best for reaching the goal.</p>
+            <button class="btn-agent">Select</button>
+          </div>
+
+          <div class="agent-card" data-agent="collector">
+            <div class="agent-icon">💎</div>
+            <h3>Collector</h3>
+            <p class="agent-spec">Resource Specialist</p>
+            <div class="agent-stats">
+              <div class="stat-bar"><span class="label">Navigation:</span><div class="bar"><div class="fill" style="width:30%"></div></div></div>
+              <div class="stat-bar"><span class="label">Gems:</span><div class="bar"><div class="fill" style="width:60%"></div></div></div>
+              <div class="stat-bar"><span class="label">Safety:</span><div class="bar"><div class="fill" style="width:10%"></div></div></div>
+            </div>
+            <p class="agent-desc">Maximizes gem collection. Best for high scores.</p>
+            <button class="btn-agent">Select</button>
+          </div>
+
+          <div class="agent-card" data-agent="protector">
+            <div class="agent-icon">🛡️</div>
+            <h3>Protector</h3>
+            <p class="agent-spec">Safety Specialist</p>
+            <div class="agent-stats">
+              <div class="stat-bar"><span class="label">Navigation:</span><div class="bar"><div class="fill" style="width:30%"></div></div></div>
+              <div class="stat-bar"><span class="label">Gems:</span><div class="bar"><div class="fill" style="width:10%"></div></div></div>
+              <div class="stat-bar"><span class="label">Safety:</span><div class="bar"><div class="fill" style="width:60%"></div></div></div>
+            </div>
+            <p class="agent-desc">Avoids hazards expertly. Best for survival.</p>
+            <button class="btn-agent">Select</button>
+          </div>
+        </div>
+
+        <button id="back-btn" class="btn-secondary">Back</button>
+      </div>
+    `;
+
+    // Add event listeners
+    const agentButtons = this.container.querySelectorAll('.btn-agent');
+    agentButtons.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const card = e.target.closest('.agent-card');
+        const agentType = card.dataset.agent;
+        if (callback) {
+          callback(agentType);
+        }
+      });
+    });
+
+    document.getElementById('back-btn')?.addEventListener('click', () => {
+      this.showDifficultySelector(mode, (diff) => {
+        this.showAgentSelector(mode, diff, callback);
+      });
     });
   }
 

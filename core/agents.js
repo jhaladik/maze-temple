@@ -157,22 +157,45 @@ class Agent {
     }
 
     // Gem collection reward
-    if (weights.gems > 0) {
-      const gemValue = this.maze.collectGem(this.x, this.y);
-      if (gemValue !== 0) {
-        reward += gemValue * weights.gems;
-        this.stats.score += gemValue;
+    const gemValue = this.maze.collectGem(this.x, this.y);
+    const hitNegativeGem = gemValue < 0;
+    const hitPositiveGem = gemValue > 0;
 
-        if (gemValue > 0) {
-          this.stats.positiveGems++;
-          this.stats.gemsCollected++;
-          this.stats.safeMovesStreak++;
-        } else {
-          this.stats.negativeGems++;
-          this.stats.safeMovesStreak = 0;
-        }
-      } else {
+    if (weights.gems > 0 && gemValue !== 0) {
+      reward += gemValue * weights.gems;
+      this.stats.score += gemValue;
+
+      if (hitPositiveGem) {
+        this.stats.positiveGems++;
+        this.stats.gemsCollected++;
         this.stats.safeMovesStreak++;
+      } else if (hitNegativeGem) {
+        this.stats.negativeGems++;
+        this.stats.safeMovesStreak = 0;
+      }
+    } else if (gemValue === 0) {
+      this.stats.safeMovesStreak++;
+    }
+
+    // Safety reward (for Protector agent)
+    if (weights.safety > 0) {
+      // Penalty for hitting negative gems
+      if (hitNegativeGem) {
+        reward += gemValue * weights.safety; // Already negative
+        this.stats.safeMovesStreak = 0;
+      }
+      // Reward for avoiding nearby hazards
+      else {
+        const nearbyHazards = this.countNearbyHazards();
+        if (nearbyHazards > 0) {
+          // Small reward for each hazard avoided
+          reward += (5 * nearbyHazards) * weights.safety;
+          this.stats.negativeGemsAvoided += nearbyHazards;
+        }
+        // Bonus for safe move streak
+        if (this.stats.safeMovesStreak > 5) {
+          reward += (this.stats.safeMovesStreak * 0.5) * weights.safety;
+        }
       }
     }
 
@@ -190,6 +213,31 @@ class Agent {
     }
 
     return reward;
+  }
+
+  // Count nearby hazards (negative gems) for Protector safety reward
+  countNearbyHazards() {
+    let count = 0;
+    const checkRadius = 2; // Check 2 cells in each direction
+
+    for (let dy = -checkRadius; dy <= checkRadius; dy++) {
+      for (let dx = -checkRadius; dx <= checkRadius; dx++) {
+        if (dx === 0 && dy === 0) continue;
+
+        const nx = this.x + dx;
+        const ny = this.y + dy;
+
+        if (nx >= 0 && nx < this.maze.size && ny >= 0 && ny < this.maze.size) {
+          const cell = this.maze.getCell(nx, ny);
+          if (cell.type >= CONFIG.CELL_TYPES.GEM_NEGATIVE_SMALL &&
+              cell.type <= CONFIG.CELL_TYPES.GEM_NEGATIVE_LARGE) {
+            count++;
+          }
+        }
+      }
+    }
+
+    return count;
   }
 
   // Reset for new episode
