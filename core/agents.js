@@ -10,9 +10,9 @@ class Agent {
     // Get agent configuration
     this.config = CONFIG.AGENTS[agentType.toUpperCase()];
 
-    // Position
-    this.x = maze.startX;
-    this.y = maze.startY;
+    // Position (handle null maze gracefully)
+    this.x = maze ? maze.startX : 0;
+    this.y = maze ? maze.startY : 0;
 
     // Stats
     this.stats = {

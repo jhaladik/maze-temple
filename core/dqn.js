@@ -90,14 +90,17 @@ class DQN {
     const layers = this.model.layers;
     layers.forEach((layer, idx) => {
       if (layer.getWeights().length > 0) {
-        const weights = layer.getWeights();
         // Set positive bias on output layer
-        if (idx === layers.length - 1 && weights.length >= 2) {
-          const bias = weights[1];
-          const optimisticBias = tf.fill(bias.shape, CONFIG.DQN.INITIAL_Q_BIAS);
-          weights[1] = optimisticBias;
-          layer.setWeights(weights);
-          bias.dispose();
+        if (idx === layers.length - 1) {
+          const weights = layer.getWeights();
+          if (weights.length >= 2) {
+            const bias = weights[1];
+            // Clone kernel and create optimistic bias
+            const kernelClone = weights[0].clone();
+            const optimisticBias = tf.fill(bias.shape, CONFIG.DQN.INITIAL_Q_BIAS);
+            // Set new weights (layer takes ownership, old weights auto-disposed)
+            layer.setWeights([kernelClone, optimisticBias]);
+          }
         }
       }
     });
@@ -185,67 +188,65 @@ class DQN {
   async train(batch) {
     if (!this.model || !this.targetModel) return null;
 
-    return await tf.tidy(() => {
-      // Extract components from batch
-      const states = batch.map(exp => exp.state);
-      const actions = batch.map(exp => exp.action);
-      const rewards = batch.map(exp => {
-        // Add reward noise to avoid zero values
-        let r = exp.reward;
-        if (this.rewardNoiseStddev > 0) {
-          r += (Math.random() - 0.5) * 2 * this.rewardNoiseStddev;
-        }
-        return Math.max(this.minReward, r);
-      });
-      const nextStates = batch.map(exp => exp.nextState);
-      const dones = batch.map(exp => exp.done ? 1 : 0);
+    // Extract components from batch
+    const states = batch.map(exp => exp.state);
+    const actions = batch.map(exp => exp.action);
+    const rewards = batch.map(exp => {
+      // Add reward noise to avoid zero values
+      let r = exp.reward;
+      if (this.rewardNoiseStddev > 0) {
+        r += (Math.random() - 0.5) * 2 * this.rewardNoiseStddev;
+      }
+      return Math.max(this.minReward, r);
+    });
+    const nextStates = batch.map(exp => exp.nextState);
+    const dones = batch.map(exp => exp.done ? 1 : 0);
 
-      // Convert to tensors
-      const statesTensor = tf.tensor2d(states);
-      const nextStatesTensor = tf.tensor2d(nextStates);
+    // Convert to tensors
+    const statesTensor = tf.tensor2d(states);
+    const nextStatesTensor = tf.tensor2d(nextStates);
 
-      // Get current Q-values
-      const currentQs = this.model.predict(statesTensor);
+    // Get current Q-values
+    const currentQs = this.model.predict(statesTensor);
 
-      // Get next Q-values from target network
-      const nextQs = this.targetModel.predict(nextStatesTensor);
-      const maxNextQs = nextQs.max(-1);
+    // Get next Q-values from target network
+    const nextQs = this.targetModel.predict(nextStatesTensor);
+    const maxNextQs = nextQs.max(-1);
 
-      // Calculate target Q-values
-      const targets = currentQs.arraySync();
+    // Calculate target Q-values
+    const targets = currentQs.arraySync();
 
-      for (let i = 0; i < batch.length; i++) {
-        const target = rewards[i] + (1 - dones[i]) * this.gamma * maxNextQs.dataSync()[i];
-        targets[i][actions[i]] = target;
+    for (let i = 0; i < batch.length; i++) {
+      const target = rewards[i] + (1 - dones[i]) * this.gamma * maxNextQs.dataSync()[i];
+      targets[i][actions[i]] = target;
+    }
+
+    const targetsTensor = tf.tensor2d(targets);
+
+    // Train model (async operation - cannot use tf.tidy)
+    return this.model.fit(statesTensor, targetsTensor, {
+      epochs: 1,
+      verbose: 0,
+      batchSize: batch.length
+    }).then(history => {
+      this.trainingSteps++;
+
+      // Record loss
+      const loss = history.history.loss[0];
+      this.lossHistory.push(loss);
+      if (this.lossHistory.length > 100) {
+        this.lossHistory.shift();
       }
 
-      const targetsTensor = tf.tensor2d(targets);
+      // Cleanup tensors manually (since we can't use tf.tidy with async)
+      statesTensor.dispose();
+      nextStatesTensor.dispose();
+      currentQs.dispose();
+      nextQs.dispose();
+      maxNextQs.dispose();
+      targetsTensor.dispose();
 
-      // Train model
-      return this.model.fit(statesTensor, targetsTensor, {
-        epochs: 1,
-        verbose: 0,
-        batchSize: batch.length
-      }).then(history => {
-        this.trainingSteps++;
-
-        // Record loss
-        const loss = history.history.loss[0];
-        this.lossHistory.push(loss);
-        if (this.lossHistory.length > 100) {
-          this.lossHistory.shift();
-        }
-
-        // Cleanup
-        statesTensor.dispose();
-        nextStatesTensor.dispose();
-        currentQs.dispose();
-        nextQs.dispose();
-        maxNextQs.dispose();
-        targetsTensor.dispose();
-
-        return { loss: loss, steps: this.trainingSteps };
-      });
+      return { loss: loss, steps: this.trainingSteps };
     });
   }
 
@@ -266,24 +267,25 @@ class DQN {
 
     if (states.length === 0) return null;
 
-    return await tf.tidy(() => {
-      const statesTensor = tf.tensor2d(states);
-      const actionsTensor = tf.oneHot(tf.tensor1d(actions, 'int32'), this.actionSize);
+    // Create tensors
+    const statesTensor = tf.tensor2d(states);
+    const actionsTensor = tf.oneHot(tf.tensor1d(actions, 'int32'), this.actionSize);
 
-      return this.model.fit(statesTensor, actionsTensor, {
-        epochs: epochs,
-        verbose: 0,
-        batchSize: 32,
-        shuffle: true
-      }).then(history => {
-        statesTensor.dispose();
-        actionsTensor.dispose();
+    // Train model (async operation - cannot use tf.tidy)
+    return this.model.fit(statesTensor, actionsTensor, {
+      epochs: epochs,
+      verbose: 0,
+      batchSize: 32,
+      shuffle: true
+    }).then(history => {
+      // Cleanup tensors manually
+      statesTensor.dispose();
+      actionsTensor.dispose();
 
-        return {
-          loss: history.history.loss[epochs - 1],
-          samples: states.length
-        };
-      });
+      return {
+        loss: history.history.loss[epochs - 1],
+        samples: states.length
+      };
     });
   }
 
@@ -295,8 +297,8 @@ class DQN {
     const weightValues = weights.map(w => w.clone());
     this.targetModel.setWeights(weightValues);
 
-    // Cleanup
-    weights.forEach(w => w.dispose());
+    // Note: Don't dispose 'weights' - they are references to the model's internal weights
+    // The cloned 'weightValues' are now owned by targetModel and will be managed automatically
   }
 
   // Decay exploration parameters

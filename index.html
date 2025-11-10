@@ -133,6 +133,13 @@
 
         if (this.trainingManager) {
           this.trainingManager.stopTraining();
+          this.trainingManager = null;
+        }
+
+        // Cleanup AI agent DQN to prevent memory leaks
+        if (this.aiAgent && this.aiAgent.dqn) {
+          this.aiAgent.dqn.dispose();
+          this.aiAgent = null;
         }
 
         // Show mode selector
@@ -273,6 +280,14 @@
         this.currentMode = 'watch';
         this.currentDifficulty = difficulty;
 
+        // Cleanup old agent and training manager if they exist
+        if (this.trainingManager) {
+          this.trainingManager.stopTraining();
+        }
+        if (this.aiAgent && this.aiAgent.dqn) {
+          this.aiAgent.dqn.dispose();
+        }
+
         // Initialize AI agent
         this.aiAgent = new Agent(null, 'explorer', this.demoRecorder);
         this.trainingManager = new TrainingManager(this.aiAgent, this.demoRecorder);
@@ -302,6 +317,11 @@
       startBattleMode(difficulty) {
         this.currentMode = 'battle';
         this.currentDifficulty = difficulty;
+
+        // Cleanup old agent if it exists
+        if (this.aiAgent && this.aiAgent.dqn) {
+          this.aiAgent.dqn.dispose();
+        }
 
         // Generate maze
         const mazeGenerator = new MazeGenerator({
