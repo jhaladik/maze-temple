@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🏛️ Maze Temple - AI Agent Training Center</title>
+  <link rel="stylesheet" href="styles.css">
+
+  <!-- TensorFlow.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <div id="header">
+      <h1>🏛️ MAZE TEMPLE</h1>
+      <div id="controls">
+        <button id="back-to-menu-btn" class="btn btn-secondary hidden">Main Menu</button>
+        <button id="toggle-heatmap-btn" class="btn btn-secondary hidden">Heatmap</button>
+        <button id="pause-btn" class="btn btn-secondary hidden">Pause</button>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div id="main">
+      <!-- Mode Selector -->
+      <div id="mode-selector"></div>
+
+      <!-- Canvas Container -->
+      <div id="canvas-container" class="hidden">
+        <canvas id="maze-canvas" width="800" height="800"></canvas>
+        <div id="virtual-dpad"></div>
+      </div>
+
+      <!-- Stats Panel -->
+      <div id="stats-panel" class="hidden"></div>
+    </div>
+  </div>
+
+  <!-- Load all modules -->
+  <script src="config.js"></script>
+
+  <!-- Core -->
+  <script src="core/maze-generator.js"></script>
+  <script src="core/replay-buffer.js"></script>
+  <script src="core/dqn.js"></script>
+  <script src="core/agents.js"></script>
+  <script src="core/training.js"></script>
+  <script src="core/battle.js"></script>
+
+  <!-- Human -->
+  <script src="human/controls.js"></script>
+  <script src="human/player.js"></script>
+  <script src="human/demo-recorder.js"></script>
+
+  <!-- UI -->
+  <script src="ui/renderer.js"></script>
+  <script src="ui/stats-display.js"></script>
+  <script src="ui/leaderboard.js"></script>
+  <script src="ui/mode-selector.js"></script>
+
+  <!-- Utils -->
+  <script src="utils/state-encoder.js"></script>
+  <script src="utils/persistence.js"></script>
+
+  <!-- Main Application -->
+  <script>
+    // Main Application Logic
+    class MazeTempleApp {
+      constructor() {
+        this.currentMode = null;
+        this.currentDifficulty = 'EASY';
+
+        // Initialize components
+        this.persistence = new Persistence();
+        this.demoRecorder = new DemonstrationRecorder(this.persistence);
+        this.leaderboard = new Leaderboard(this.persistence);
+
+        this.controls = new Controls();
+        this.virtualDPad = new VirtualDPad('virtual-dpad');
+
+        this.renderer = new Renderer(document.getElementById('maze-canvas'));
+        this.statsDisplay = new StatsDisplay('stats-panel');
+        this.modeSelector = new ModeSelector('mode-selector');
+
+        // Game state
+        this.maze = null;
+        this.humanPlayer = null;
+        this.aiAgent = null;
+        this.trainingManager = null;
+        this.battle = null;
+
+        this.gameLoop = null;
+
+        // Setup
+        this.setupUI();
+        this.showMainMenu();
+      }
+
+      setupUI() {
+        // Mode selector callback
+        this.modeSelector.onModeSelected = (mode) => {
+          this.handleModeSelection(mode);
+        };
+
+        // Virtual D-Pad callback
+        this.virtualDPad.onInput = (action) => {
+          this.controls.addInput(action);
+        };
+
+        // Button handlers
+        document.getElementById('back-to-menu-btn').addEventListener('click', () => {
+          this.showMainMenu();
+        });
+
+        document.getElementById('toggle-heatmap-btn').addEventListener('click', () => {
+          this.renderer.toggleHeatmap();
+        });
+
+        document.getElementById('pause-btn').addEventListener('click', () => {
+          if (this.trainingManager) {
+            this.trainingManager.togglePause();
+          }
+        });
+      }
+
+      showMainMenu() {
+        // Stop any running game
+        if (this.gameLoop) {
+          cancelAnimationFrame(this.gameLoop);
+          this.gameLoop = null;
+        }
+
+        if (this.trainingManager) {
+          this.trainingManager.stopTraining();
+        }
+
+        // Show mode selector
+        this.modeSelector.show();
+
+        // Hide game UI
+        document.getElementById('canvas-container').classList.add('hidden');
+        document.getElementById('stats-panel').classList.add('hidden');
+        document.getElementById('back-to-menu-btn').classList.add('hidden');
+        document.getElementById('toggle-heatmap-btn').classList.add('hidden');
+        document.getElementById('pause-btn').classList.add('hidden');
+
+        this.currentMode = null;
+      }
+
+      handleModeSelection(mode) {
+        switch(mode) {
+          case 'play':
+            this.modeSelector.showDifficultySelector(mode, (difficulty) => {
+              this.startPlayMode(difficulty);
+            });
+            break;
+
+          case 'watch':
+            this.modeSelector.showDifficultySelector(mode, (difficulty) => {
+              this.startWatchMode(difficulty);
+            });
+            break;
+
+          case 'battle':
+            this.modeSelector.showDifficultySelector(mode, (difficulty) => {
+              this.startBattleMode(difficulty);
+            });
+            break;
+
+          case 'demos':
+            this.modeSelector.showDemoLibrary(this.demoRecorder);
+            break;
+
+          case 'leaderboard':
+            this.showLeaderboard();
+            break;
+
+          case 'settings':
+            // TODO: Implement settings
+            alert('Settings coming in Phase 3!');
+            break;
+        }
+      }
+
+      startPlayMode(difficulty) {
+        this.currentMode = 'play';
+        this.currentDifficulty = difficulty;
+
+        // Generate maze
+        const mazeGenerator = new MazeGenerator({
+          difficulty: difficulty,
+          seed: Date.now()
+        });
+        const mazeData = mazeGenerator.generate();
+        this.maze = new Maze(mazeData);
+
+        // Create human player
+        this.humanPlayer = new HumanPlayer(this.maze, this.controls);
+
+        // Start demo recording
+        this.demoRecorder.startRecording(this.maze, 'explorer');
+
+        // Show game UI
+        document.getElementById('mode-selector').innerHTML = '';
+        document.getElementById('canvas-container').classList.remove('hidden');
+        document.getElementById('stats-panel').classList.remove('hidden');
+        document.getElementById('back-to-menu-btn').classList.remove('hidden');
+        document.getElementById('toggle-heatmap-btn').classList.remove('hidden');
+
+        // Start game loop
+        this.startPlayLoop();
+      }
+
+      startPlayLoop() {
+        const update = () => {
+          // Update player
+          const result = this.humanPlayer.update(0);
+
+          // Record step if action was taken
+          if (result && result.valid) {
+            this.demoRecorder.recordStep(
+              this.humanPlayer,
+              this.maze,
+              result.action,
+              result
+            );
+          }
+
+          // Render
+          this.renderer.render(this.maze, this.humanPlayer);
+          this.statsDisplay.updatePlayer(this.humanPlayer, this.maze);
+
+          // Check completion
+          if (!this.humanPlayer.active) {
+            this.handlePlayComplete();
+            return;
+          }
+
+          this.gameLoop = requestAnimationFrame(update);
+        };
+
+        update();
+      }
+
+      handlePlayComplete() {
+        // Stop recording and save demo
+        const result = this.demoRecorder.stopRecording(this.humanPlayer, this.maze);
+
+        // Add to leaderboard
+        this.leaderboard.addEntry(
+          'human',
+          'Player',
+          this.humanPlayer.getPerformance(),
+          this.maze
+        );
+
+        // Show results
+        const message = this.humanPlayer.stats.completed ?
+                       `Congratulations! You completed the maze!\n\nScore: ${this.humanPlayer.stats.score}\nSteps: ${this.humanPlayer.stats.steps}\n\n` :
+                       `Time's up!\n\nScore: ${this.humanPlayer.stats.score}\nSteps: ${this.humanPlayer.stats.steps}\n\n`;
+
+        const demoMessage = result.saved ?
+                           `Demo saved! (Quality: ${(result.quality * 100).toFixed(0)}%)` :
+                           'Demo quality too low to save.';
+
+        alert(message + demoMessage);
+
+        this.showMainMenu();
+      }
+
+      async startWatchMode(difficulty) {
+        this.currentMode = 'watch';
+        this.currentDifficulty = difficulty;
+
+        // Initialize AI agent
+        this.aiAgent = new Agent(null, 'explorer', this.demoRecorder);
+        this.trainingManager = new TrainingManager(this.aiAgent, this.demoRecorder);
+
+        // Show game UI
+        document.getElementById('mode-selector').innerHTML = '';
+        document.getElementById('canvas-container').classList.remove('hidden');
+        document.getElementById('stats-panel').classList.remove('hidden');
+        document.getElementById('back-to-menu-btn').classList.remove('hidden');
+        document.getElementById('toggle-heatmap-btn').classList.remove('hidden');
+        document.getElementById('pause-btn').classList.remove('hidden');
+
+        // Setup callbacks
+        this.trainingManager.onTrainingUpdate = (agent, steps) => {
+          this.renderer.render(agent.maze, agent);
+        };
+
+        this.trainingManager.onEpisodeEnd = (stats) => {
+          this.statsDisplay.updateTraining(stats);
+          console.log(`Episode ${stats.episode}: Reward=${stats.reward.toFixed(1)}, Success=${stats.success}`);
+        };
+
+        // Start training
+        await this.trainingManager.startTraining();
+      }
+
+      startBattleMode(difficulty) {
+        this.currentMode = 'battle';
+        this.currentDifficulty = difficulty;
+
+        // Generate maze
+        const mazeGenerator = new MazeGenerator({
+          difficulty: difficulty,
+          seed: Date.now()
+        });
+        const mazeData = mazeGenerator.generate();
+
+        // Create players
+        const humanMaze = new Maze(mazeData);
+        this.humanPlayer = new HumanPlayer(humanMaze, this.controls);
+
+        const aiMaze = new Maze(mazeData);
+        this.aiAgent = new Agent(aiMaze, 'explorer', null);
+
+        // Create battle
+        this.battle = new MazeBattle(mazeData, this.humanPlayer, this.aiAgent);
+
+        // Show game UI
+        document.getElementById('mode-selector').innerHTML = '';
+        document.getElementById('canvas-container').classList.remove('hidden');
+        document.getElementById('stats-panel').classList.remove('hidden');
+        document.getElementById('back-to-menu-btn').classList.remove('hidden');
+        document.getElementById('toggle-heatmap-btn').classList.remove('hidden');
+
+        // Setup callbacks
+        this.battle.onUpdate = (status) => {
+          this.statsDisplay.updateBattle(status);
+        };
+
+        this.battle.onComplete = (results) => {
+          this.handleBattleComplete(results);
+        };
+
+        // Start battle loop
+        this.startBattleLoop();
+      }
+
+      startBattleLoop() {
+        const update = () => {
+          this.battle.update(16); // ~60fps
+
+          // Render split screen
+          this.renderer.renderBattle(
+            this.battle.humanMaze,
+            this.battle.humanPlayer,
+            this.battle.aiMaze,
+            this.battle.aiAgent
+          );
+
+          if (this.battle.active) {
+            this.gameLoop = requestAnimationFrame(update);
+          }
+        };
+
+        update();
+      }
+
+      handleBattleComplete(results) {
+        // Add entries to leaderboard
+        this.leaderboard.addEntry(
+          'human',
+          'Player',
+          results.human.performance,
+          this.battle.humanMaze
+        );
+
+        this.leaderboard.addEntry(
+          'explorer',
+          'AI Explorer',
+          results.ai.performance,
+          this.battle.aiMaze
+        );
+
+        // Show results
+        this.statsDisplay.showBattleResults(results);
+
+        // Setup result buttons
+        document.getElementById('rematch-btn')?.addEventListener('click', () => {
+          this.startBattleMode(this.currentDifficulty);
+        });
+
+        document.getElementById('menu-btn')?.addEventListener('click', () => {
+          this.showMainMenu();
+        });
+      }
+
+      showLeaderboard() {
+        const container = document.getElementById('mode-selector');
+
+        container.innerHTML = `
+          <div class="leaderboard-view">
+            <h2>🏆 Leaderboard</h2>
+
+            <div id="leaderboard-content"></div>
+
+            <button id="back-btn" class="btn btn-secondary">Back</button>
+          </div>
+        `;
+
+        this.leaderboard.display('leaderboard-content', {
+          count: 20,
+          filter: {}
+        });
+
+        document.getElementById('back-btn').addEventListener('click', () => {
+          this.showMainMenu();
+        });
+      }
+    }
+
+    // Initialize app when TensorFlow.js is ready
+    window.addEventListener('load', async () => {
+      console.log('🏛️ Maze Temple - Initializing...');
+
+      // Wait for TensorFlow.js
+      await tf.ready();
+      console.log('✓ TensorFlow.js ready');
+      console.log('✓ Backend:', tf.getBackend());
+
+      // Initialize app
+      window.app = new MazeTempleApp();
+      console.log('✓ Application ready');
+    });
+  </script>
+</body>
+</html>
