@@ -130,8 +130,8 @@ class DQN {
     });
   }
 
-  // Select action using epsilon-greedy with imitation
-  selectAction(state, demos = null, training = true) {
+  // Select action using epsilon-greedy with imitation - NOW ASYNC!
+  async selectAction(state, demos = null, training = true) {
     // Epsilon-greedy exploration
     if (training && Math.random() < this.epsilon) {
       // Exploration: use imitation or random
@@ -143,8 +143,19 @@ class DQN {
     } else {
       // Exploitation: use learned policy
       const qValues = this.predict(state, false);
-      const action = qValues.argMax(-1).dataSync()[0];
+      if (!qValues) {
+        // Model not ready, use random action
+        return Math.floor(Math.random() * this.actionSize);
+      }
+      // ASYNC - Use .data() instead of .dataSync() to avoid blocking
+      const actionTensor = qValues.argMax(-1);
+      const actionData = await actionTensor.data();
+      const action = actionData[0];
+
+      // Dispose tensors
+      actionTensor.dispose();
       qValues.dispose();
+
       return action;
     }
   }
@@ -213,15 +224,16 @@ class DQN {
     const nextQs = this.targetModel.predict(nextStatesTensor);
     const maxNextQs = nextQs.max(-1);
 
-    // Calculate target Q-values
-    const targets = currentQs.arraySync();
+    // Calculate target Q-values - ASYNC to avoid blocking
+    const targetsArray = await currentQs.array();  // Use .array() instead of .arraySync()
+    const maxNextQsArray = await maxNextQs.data();  // Use .data() instead of .dataSync()
 
     for (let i = 0; i < batch.length; i++) {
-      const target = rewards[i] + (1 - dones[i]) * this.gamma * maxNextQs.dataSync()[i];
-      targets[i][actions[i]] = target;
+      const target = rewards[i] + (1 - dones[i]) * this.gamma * maxNextQsArray[i];
+      targetsArray[i][actions[i]] = target;
     }
 
-    const targetsTensor = tf.tensor2d(targets);
+    const targetsTensor = tf.tensor2d(targetsArray);
 
     // Train model (async operation - cannot use tf.tidy)
     return this.model.fit(statesTensor, targetsTensor, {

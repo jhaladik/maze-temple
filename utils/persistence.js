@@ -176,6 +176,38 @@ class Persistence {
     }
   }
 
+  // Named agent management (save with metadata)
+  saveNamedAgent(name, agent, stats) {
+    const agents = this.get('named_agents') || {};
+
+    agents[name] = {
+      name: name,
+      type: agent.agentType,
+      episode: agent.episode,
+      stats: stats,
+      timestamp: Date.now()
+    };
+
+    console.log('💾 Saving named agent:', name, agents[name]);
+    return this.set('named_agents', agents);
+  }
+
+  loadNamedAgents() {
+    const agents = this.get('named_agents') || {};
+    return Object.values(agents);
+  }
+
+  loadNamedAgent(name) {
+    const agents = this.get('named_agents') || {};
+    return agents[name] || null;
+  }
+
+  deleteNamedAgent(name) {
+    const agents = this.get('named_agents') || {};
+    delete agents[name];
+    return this.set('named_agents', agents);
+  }
+
   // Settings management
   loadSettings() {
     const settings = this.get(CONFIG.STORAGE.KEYS.SETTINGS);

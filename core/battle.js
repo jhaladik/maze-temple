@@ -19,18 +19,22 @@ class MazeBattle {
     this.active = true;
     this.startTime = Date.now();
     this.winner = null;
+    this.humanFinishedLogged = false;
+    this.aiFinishedLogged = false;
 
     // AI update control
     this.aiUpdateInterval = 200; // ms between AI moves
     this.lastAIUpdate = 0;
+    this.aiInvalidAttempts = 0; // Track consecutive invalid moves
+    this.aiLastInvalidAction = -1;
 
     // Callbacks
     this.onUpdate = null;
     this.onComplete = null;
   }
 
-  // Update battle state
-  update(deltaTime) {
+  // Update battle state - NOW ASYNC!
+  async update(deltaTime) {
     if (!this.active) return;
 
     // Update human player (input-driven)
@@ -39,17 +43,48 @@ class MazeBattle {
     // Update AI agent (time-based)
     const now = Date.now();
     if (now - this.lastAIUpdate >= this.aiUpdateInterval) {
-      const aiAction = this.aiAgent.selectAction(null); // No demos during battle
-      const aiResult = this.aiAgent.executeAction(aiAction);
+      if (this.aiAgent.active) {
+        let aiAction;
+
+        // If stuck (consecutive invalid moves), use random action
+        if (this.aiInvalidAttempts > 3) {
+          aiAction = Math.floor(Math.random() * 4);
+          if (CONFIG.DEBUG.ENABLED) {
+            console.log('🤖 AI stuck! Using random action:', CONFIG.ACTIONS.NAMES[aiAction]);
+          }
+        } else {
+          // AWAIT async operation - non-blocking!
+          aiAction = await this.aiAgent.selectAction(null); // No demos (training flag set in agent)
+        }
+
+        const aiResult = this.aiAgent.executeAction(aiAction);
+
+        // Track invalid moves
+        if (aiResult.valid) {
+          this.aiInvalidAttempts = 0;
+        } else {
+          this.aiInvalidAttempts++;
+        }
+
+        if (CONFIG.DEBUG.ENABLED && aiResult) {
+          console.log('🤖 AI action:', CONFIG.ACTIONS.NAMES[aiAction], 'valid:', aiResult.valid, 'active:', this.aiAgent.active, 'steps:', this.aiAgent.stats.steps, 'invalid attempts:', this.aiInvalidAttempts);
+        }
+      } else {
+        if (CONFIG.DEBUG.ENABLED) {
+          console.log('🤖 AI is inactive! Steps:', this.aiAgent.stats.steps, 'Completed:', this.aiAgent.stats.completed);
+        }
+      }
       this.lastAIUpdate = now;
     }
 
     // Check for completion
     this.checkCompletion();
 
-    // Callback for UI updates
+    // Callback for UI updates (every frame)
     if (this.onUpdate) {
       this.onUpdate(this.getStatus());
+    } else if (CONFIG.DEBUG.ENABLED) {
+      console.warn('⚠️ No onUpdate callback set!');
     }
   }
 
@@ -58,27 +93,37 @@ class MazeBattle {
     const humanDone = !this.humanPlayer.active;
     const aiDone = !this.aiAgent.active;
 
+    // Log when a player finishes
+    if (humanDone && !this.humanFinishedLogged) {
+      console.log('🏁 HUMAN FINISHED! Score:', this.humanPlayer.stats.score, 'Steps:', this.humanPlayer.stats.steps, 'Completed:', this.humanPlayer.stats.completed);
+      this.humanFinishedLogged = true;
+    }
+    if (aiDone && !this.aiFinishedLogged) {
+      console.log('🏁 AI FINISHED! Score:', this.aiAgent.stats.score, 'Steps:', this.aiAgent.stats.steps, 'Completed:', this.aiAgent.stats.completed);
+      this.aiFinishedLogged = true;
+    }
+
+    // Only end when BOTH are done
     if (humanDone && aiDone) {
+      console.log('🏆 BATTLE COMPLETE! Both players finished.');
       this.active = false;
       this.determineWinner();
 
       if (this.onComplete) {
         this.onComplete(this.getResults());
       }
-    } else if (humanDone) {
-      // Human finished first, keep AI running for comparison
-      if (this.aiAgent.stats.steps > this.humanPlayer.stats.steps + 50) {
-        // AI is taking too long, end battle
-        this.active = false;
-        this.determineWinner();
-        if (this.onComplete) {
-          this.onComplete(this.getResults());
-        }
-      }
-    } else if (aiDone) {
-      // AI finished first, keep human running
-      // Human can still finish
+      return;
     }
+
+    // Safety: If AI takes too long (500 steps), end battle
+    if (this.aiAgent.stats.steps > 500 && !this.aiAgent.stats.completed) {
+      console.log('⏱️ AI taking too long (500+ steps), ending battle');
+      this.aiAgent.active = false;
+      // Will trigger completion check on next frame
+    }
+
+    // If one finishes first, keep battle going
+    // Let both players complete their runs
   }
 
   // Determine winner
@@ -141,7 +186,9 @@ class MazeBattle {
         y: this.aiAgent.y,
         stats: { ...this.aiAgent.stats },
         active: this.aiAgent.active
-      }
+      },
+      humanMaze: this.humanMaze,
+      aiMaze: this.aiMaze
     };
   }
 

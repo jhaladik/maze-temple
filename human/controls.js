@@ -13,6 +13,9 @@ class Controls {
 
     this.enabled = true;
 
+    // Track event listeners for cleanup
+    this.listeners = [];
+
     this.setupKeyboard();
     if (CONFIG.CONTROLS.ENABLE_TOUCH) {
       this.setupTouch();
@@ -32,25 +35,29 @@ class Controls {
   }
 
   setupKeyboard() {
-    document.addEventListener('keydown', (e) => {
+    const handler = (e) => {
       if (!this.enabled) return;
 
       if (this.keyMap.hasOwnProperty(e.key)) {
         e.preventDefault();
         this.addInput(this.keyMap[e.key]);
       }
-    });
+    };
+
+    document.addEventListener('keydown', handler);
+    // Track for cleanup
+    this.listeners.push({ element: document, event: 'keydown', handler });
   }
 
   setupTouch() {
-    // Swipe detection
-    document.addEventListener('touchstart', (e) => {
+    // Swipe detection - touchstart handler
+    const touchStartHandler = (e) => {
       if (!this.enabled) return;
       this.touchStartX = e.touches[0].clientX;
       this.touchStartY = e.touches[0].clientY;
-    }, { passive: false });
+    };
 
-    document.addEventListener('touchend', (e) => {
+    const touchEndHandler = (e) => {
       if (!this.enabled) return;
 
       const touchEndX = e.changedTouches[0].clientX;
@@ -73,7 +80,14 @@ class Controls {
           this.addInput(dy > 0 ? CONFIG.ACTIONS.DOWN : CONFIG.ACTIONS.UP);
         }
       }
-    }, { passive: false });
+    };
+
+    document.addEventListener('touchstart', touchStartHandler, { passive: false });
+    document.addEventListener('touchend', touchEndHandler, { passive: false });
+
+    // Track for cleanup
+    this.listeners.push({ element: document, event: 'touchstart', handler: touchStartHandler });
+    this.listeners.push({ element: document, event: 'touchend', handler: touchEndHandler });
   }
 
   addInput(action) {
@@ -103,6 +117,17 @@ class Controls {
   }
 
   disable() {
+    this.enabled = false;
+    this.clearBuffer();
+  }
+
+  // Cleanup - remove all event listeners to prevent memory leaks
+  destroy() {
+    console.log('🧹 Cleaning up Controls - removing', this.listeners.length, 'event listeners');
+    this.listeners.forEach(({ element, event, handler }) => {
+      element.removeEventListener(event, handler);
+    });
+    this.listeners = [];
     this.enabled = false;
     this.clearBuffer();
   }

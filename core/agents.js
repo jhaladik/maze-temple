@@ -55,10 +55,10 @@ class Agent {
     return this.stateEncoder.encode(this, this.maze);
   }
 
-  // Select action
-  selectAction(demos = null) {
+  // Select action - NOW ASYNC!
+  async selectAction(demos = null) {
     const state = this.getState();
-    return this.dqn.selectAction(state, demos, this.training);
+    return await this.dqn.selectAction(state, demos, this.training);
   }
 
   // Execute action and get reward
@@ -71,6 +71,11 @@ class Agent {
 
     // Check if valid move
     if (!this.maze.isWalkable(newX, newY)) {
+      // Count invalid move attempts during battle
+      if (!this.training) {
+        this.stats.steps++; // Count invalid moves in battle mode
+      }
+
       return {
         action: action,
         valid: false,
@@ -109,19 +114,21 @@ class Agent {
       done = true;
     }
 
-    // Max steps exceeded
-    if (this.stats.steps >= CONFIG.REWARDS.MAX_STEPS) {
+    // Max steps exceeded - only during training
+    if (this.training && this.stats.steps >= CONFIG.REWARDS.MAX_STEPS) {
       reward += CONFIG.REWARDS.STUCK_PENALTY;
       this.active = false;
       done = true;
     }
 
-    // Too many revisits (stuck detection)
-    const revisits = this.maze.visitedCells[this.y][this.x];
-    if (revisits > CONFIG.REWARDS.MAX_REVISITS) {
-      reward += CONFIG.REWARDS.STUCK_PENALTY;
-      this.active = false;
-      done = true;
+    // Too many revisits (stuck detection) - only during training
+    if (this.training) {
+      const revisits = this.maze.visitedCells[this.y][this.x];
+      if (revisits > CONFIG.REWARDS.MAX_REVISITS) {
+        reward += CONFIG.REWARDS.STUCK_PENALTY;
+        this.active = false;
+        done = true;
+      }
     }
 
     const nextState = this.getState();

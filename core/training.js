@@ -9,6 +9,7 @@ class TrainingManager {
     this.episode = 0;
     this.running = false;
     this.paused = false;
+    this.cancelled = false; // IMMEDIATE CANCELLATION FLAG
 
     // Episode metrics
     this.episodeRewards = [];
@@ -26,14 +27,19 @@ class TrainingManager {
   // Start training
   async startTraining() {
     this.running = true;
+    this.cancelled = false; // Reset cancellation flag
     this.agent.training = true;
+    console.log('🚀 Starting training - cancellation flag reset');
     await this.trainingLoop();
   }
 
-  // Stop training
+  // Stop training - IMMEDIATE CANCELLATION
   stopTraining() {
+    console.log('⏹️ Stopping training IMMEDIATELY...');
+    this.cancelled = true; // Set flag FIRST for immediate effect
     this.running = false;
     this.agent.training = false;
+    console.log('✅ Training stopped - cancelled flag set');
   }
 
   // Pause/resume training
@@ -43,6 +49,7 @@ class TrainingManager {
 
   // Main training loop
   async trainingLoop() {
+    console.log('🏃 Training loop started');
     while (this.running) {
       if (this.paused) {
         await this.sleep(100);
@@ -58,11 +65,18 @@ class TrainingManager {
         this.stopTraining();
       }
     }
+    console.log('🏁 Training loop exited');
   }
 
   // Run a single episode
   async runEpisode() {
     this.episode++;
+
+    // CHECK CANCELLATION - Exit immediately if cancelled
+    if (this.cancelled) {
+      console.log('🚫 Episode cancelled before start');
+      return;
+    }
 
     // Generate new maze
     const mazeGenerator = new MazeGenerator({
@@ -76,6 +90,12 @@ class TrainingManager {
     // Reset agent
     this.agent.reset(maze);
 
+    // CHECK CANCELLATION
+    if (this.cancelled) {
+      console.log('🚫 Episode cancelled after maze generation');
+      return;
+    }
+
     // Get relevant demos for imitation learning
     const demos = this.demoRecorder.getRelevantDemos(maze, this.agent.agentType, 10);
 
@@ -86,18 +106,24 @@ class TrainingManager {
                     CONFIG.IMITATION.PRETRAINING_EPOCHS : 1;
 
       await this.agent.dqn.trainOnDemonstrations(demos, epochs);
+
+      // CHECK CANCELLATION after training
+      if (this.cancelled) {
+        console.log('🚫 Episode cancelled after pre-training');
+        return;
+      }
     }
 
     // Episode rollout
     let totalReward = 0;
     let steps = 0;
 
-    while (this.agent.active && steps < CONFIG.REWARDS.MAX_STEPS) {
+    while (this.agent.active && steps < CONFIG.REWARDS.MAX_STEPS && !this.cancelled) {
       // Get current state
       const state = this.agent.getState();
 
-      // Select action
-      const action = this.agent.selectAction(demos);
+      // Select action - AWAIT async operation
+      const action = await this.agent.selectAction(demos);
 
       // Execute action
       const result = this.agent.executeAction(action);
@@ -133,6 +159,12 @@ class TrainingManager {
       }
     }
 
+    // CHECK CANCELLATION - Exit before episode end processing
+    if (this.cancelled) {
+      console.log('🚫 Episode cancelled during rollout at step', steps);
+      return;
+    }
+
     // Episode end
     this.episodeRewards.push(totalReward);
     this.episodeSteps.push(steps);
@@ -163,6 +195,7 @@ class TrainingManager {
   // Get episode statistics
   getEpisodeStats() {
     return {
+      agentType: this.agent.agentType,
       episode: this.episode,
       reward: this.episodeRewards[this.episodeRewards.length - 1] || 0,
       steps: this.episodeSteps[this.episodeSteps.length - 1] || 0,

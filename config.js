@@ -237,7 +237,7 @@ const CONFIG = {
 
   // Debug
   DEBUG: {
-    ENABLED: false,
+    ENABLED: true,
     LOG_TRAINING: false,
     LOG_REWARDS: false,
     LOG_ACTIONS: false,

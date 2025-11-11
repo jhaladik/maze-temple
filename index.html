@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>🏛️ Maze Temple - AI Agent Training Center</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=2">
 
   <!-- TensorFlow.js -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
@@ -57,6 +57,7 @@
   <!-- UI -->
   <script src="ui/renderer.js"></script>
   <script src="ui/stats-display.js"></script>
+  <script src="ui/training-dashboard.js?v=2"></script>
   <script src="ui/leaderboard.js"></script>
   <script src="ui/mode-selector.js"></script>
 
@@ -82,6 +83,7 @@
 
         this.renderer = new Renderer(document.getElementById('maze-canvas'));
         this.statsDisplay = new StatsDisplay('stats-panel');
+        this.trainingDashboard = new TrainingDashboard('stats-panel');
         this.modeSelector = new ModeSelector('mode-selector');
 
         // Game state
@@ -132,35 +134,83 @@
         });
       }
 
+      promptSaveAgent(stats) {
+        const agentName = prompt(`Save trained agent "${stats.agentType}"?\n\nEpisodes: ${stats.episode}\nSuccess Rate: ${(stats.successRate * 100).toFixed(0)}%\nAvg Reward: ${stats.avgReward.toFixed(1)}\n\nEnter name:`);
+
+        if (agentName && agentName.trim()) {
+          const success = this.persistence.saveNamedAgent(agentName.trim(), this.aiAgent, stats);
+          if (success) {
+            alert(`✅ Agent "${agentName}" saved successfully!\n\nYou can load it later for battle mode.`);
+          } else {
+            alert('❌ Failed to save agent');
+          }
+        }
+      }
+
+      showSavedAgents() {
+        const agents = this.persistence.loadNamedAgents();
+
+        if (agents.length === 0) {
+          alert('No saved agents found.\n\nTrain an agent and click "💾 Save Agent" to save it.');
+          return;
+        }
+
+        const agentList = agents.map((a, idx) => {
+          const date = new Date(a.timestamp).toLocaleDateString();
+          return `${idx + 1}. ${a.name} (${a.type})\n   Episodes: ${a.episode} | Success: ${(a.stats.successRate * 100).toFixed(0)}% | ${date}`;
+        }).join('\n\n');
+
+        alert(`📂 Saved Agents:\n\n${agentList}\n\nNote: Agent weights are preserved in memory.\nUse battle mode to test your trained agents!`);
+      }
+
       showMainMenu() {
-        // Stop any running game
-        if (this.gameLoop) {
-          cancelAnimationFrame(this.gameLoop);
-          this.gameLoop = null;
+        console.log('📋 Returning to main menu...');
+
+        try {
+          // Stop any running game
+          console.log('  - Stopping game loop...');
+          if (this.gameLoop) {
+            cancelAnimationFrame(this.gameLoop);
+            this.gameLoop = null;
+          }
+
+          console.log('  - Stopping training manager...');
+          if (this.trainingManager) {
+            this.trainingManager.stopTraining();
+            this.trainingManager = null;
+          }
+
+          // DON'T dispose agent - keep trained model for battle mode!
+          // Only stop training, preserve the learned weights
+          console.log('  - Preserving agent...');
+          if (this.aiAgent) {
+            this.aiAgent.training = false;
+            console.log('💾 Preserving trained agent:', this.aiAgent.agentType, 'Episode:', this.aiAgent.episode);
+          }
+
+          // Clear training dashboard
+          console.log('  - Clearing dashboard...');
+          this.trainingDashboard.clear();
+
+          // Hide game UI
+          console.log('  - Hiding game UI...');
+          document.getElementById('canvas-container').classList.add('hidden');
+          document.getElementById('stats-panel').classList.add('hidden');
+          document.getElementById('back-to-menu-btn').classList.add('hidden');
+          document.getElementById('toggle-heatmap-btn').classList.add('hidden');
+          document.getElementById('pause-btn').classList.add('hidden');
+
+          // Show mode selector
+          console.log('  - Showing mode selector...');
+          this.modeSelector.show();
+
+          this.currentMode = null;
+          console.log('✅ Main menu displayed');
+
+        } catch (error) {
+          console.error('❌ Error in showMainMenu:', error);
+          alert('Error returning to menu: ' + error.message);
         }
-
-        if (this.trainingManager) {
-          this.trainingManager.stopTraining();
-          this.trainingManager = null;
-        }
-
-        // Cleanup AI agent DQN to prevent memory leaks
-        if (this.aiAgent && this.aiAgent.dqn) {
-          this.aiAgent.dqn.dispose();
-          this.aiAgent = null;
-        }
-
-        // Show mode selector
-        this.modeSelector.show();
-
-        // Hide game UI
-        document.getElementById('canvas-container').classList.add('hidden');
-        document.getElementById('stats-panel').classList.add('hidden');
-        document.getElementById('back-to-menu-btn').classList.add('hidden');
-        document.getElementById('toggle-heatmap-btn').classList.add('hidden');
-        document.getElementById('pause-btn').classList.add('hidden');
-
-        this.currentMode = null;
       }
 
       handleModeSelection(mode) {
@@ -249,6 +299,9 @@
       }
 
       startPlayLoop() {
+        // Enable controls
+        this.controls.enable();
+
         const update = () => {
           // Update player
           const result = this.humanPlayer.update(0);
@@ -276,6 +329,7 @@
           this.gameLoop = requestAnimationFrame(update);
         };
 
+        console.log('Starting play loop...');
         update();
       }
 
@@ -316,16 +370,24 @@
           this.gameLoop = null;
         }
 
-        // Cleanup old agent and training manager if they exist
+        // Cleanup old training manager
         if (this.trainingManager) {
           this.trainingManager.stopTraining();
-        }
-        if (this.aiAgent && this.aiAgent.dqn) {
-          this.aiAgent.dqn.dispose();
+          this.trainingManager = null;
         }
 
-        // Initialize AI agent with selected type
-        this.aiAgent = new Agent(null, agentType, this.demoRecorder);
+        // Only create new agent if type changed or doesn't exist
+        if (!this.aiAgent || this.aiAgent.agentType !== agentType) {
+          console.log('🆕 Creating new agent for training:', agentType);
+          if (this.aiAgent && this.aiAgent.dqn) {
+            console.log('🗑️ Disposing old agent:', this.aiAgent.agentType);
+            this.aiAgent.dqn.dispose();
+          }
+          this.aiAgent = new Agent(null, agentType, this.demoRecorder);
+        } else {
+          console.log('♻️ Continuing training with existing agent:', agentType, 'Episode:', this.aiAgent.episode);
+        }
+
         this.trainingManager = new TrainingManager(this.aiAgent, this.demoRecorder);
 
         // Show game UI
@@ -346,8 +408,30 @@
           this.renderer.render(agent.maze, agent);
         };
 
+        // Initialize training dashboard
+        this.trainingDashboard.init(this.aiAgent, this.trainingManager);
+
+        // Setup event delegation for training buttons (only once)
+        const statsPanel = document.getElementById('stats-display');
+        if (statsPanel && !statsPanel.hasAttribute('data-training-listener')) {
+          statsPanel.setAttribute('data-training-listener', 'true');
+          statsPanel.addEventListener('click', (e) => {
+            if (e.target.id === 'save-agent-btn') {
+              e.preventDefault();
+              const stats = this.statsDisplay._currentStats;
+              if (stats) {
+                this.promptSaveAgent(stats);
+              }
+            } else if (e.target.id === 'load-agents-btn') {
+              e.preventDefault();
+              this.showSavedAgents();
+            }
+          });
+        }
+
         this.trainingManager.onEpisodeEnd = (stats) => {
-          this.statsDisplay.updateTraining(stats);
+          // Update training dashboard with live metrics
+          this.trainingDashboard.update(stats);
           console.log(`Episode ${stats.episode}: Reward=${stats.reward.toFixed(1)}, Success=${stats.success}`);
         };
 
@@ -366,11 +450,6 @@
           this.gameLoop = null;
         }
 
-        // Cleanup old agent if it exists
-        if (this.aiAgent && this.aiAgent.dqn) {
-          this.aiAgent.dqn.dispose();
-        }
-
         // Generate maze
         const mazeGenerator = new MazeGenerator({
           difficulty: difficulty,
@@ -383,7 +462,32 @@
         this.humanPlayer = new HumanPlayer(humanMaze, this.controls);
 
         const aiMaze = new Maze(mazeData);
-        this.aiAgent = new Agent(aiMaze, agentType, null);
+
+        // Reuse existing trained agent if it exists and matches type
+        console.log('🔍 Battle mode agent check:');
+        console.log('  - aiAgent exists:', !!this.aiAgent);
+        console.log('  - Agent type:', this.aiAgent ? this.aiAgent.agentType : 'none');
+        console.log('  - Requested type:', agentType);
+        console.log('  - Agent episode:', this.aiAgent ? this.aiAgent.episode : 0);
+        console.log('  - DQN exists:', this.aiAgent && this.aiAgent.dqn ? 'yes' : 'no');
+        console.log('  - DQN model exists:', this.aiAgent && this.aiAgent.dqn && this.aiAgent.dqn.model ? 'yes' : 'no');
+
+        if (!this.aiAgent || this.aiAgent.agentType !== agentType) {
+          console.warn('⚠️ Creating NEW untrained agent! No matching trained agent found.');
+          // Only create new agent if needed
+          if (this.aiAgent && this.aiAgent.dqn) {
+            this.aiAgent.dqn.dispose();
+          }
+          this.aiAgent = new Agent(aiMaze, agentType, null);
+        } else {
+          console.log('✅ Reusing trained agent from training mode');
+          // Reset existing trained agent with new maze
+          this.aiAgent.reset(aiMaze);
+        }
+
+        // Disable training mode for battle (use learned policy only)
+        this.aiAgent.training = false;
+        console.log('🎮 Agent ready for battle. Training mode:', this.aiAgent.training);
 
         // Create battle
         this.battle = new MazeBattle(mazeData, this.humanPlayer, this.aiAgent);
@@ -414,8 +518,18 @@
       }
 
       startBattleLoop() {
-        const update = () => {
-          this.battle.update(16); // ~60fps
+        // Enable controls
+        this.controls.enable();
+
+        let frameCount = 0;
+        const update = async () => {  // MAKE ASYNC
+          // Log every 60 frames (1 second at 60fps) instead of every frame
+          if (CONFIG.DEBUG.ENABLED && frameCount % 60 === 0) {
+            console.log('Battle loop running - active:', this.battle.active, 'Human:', this.humanPlayer.x, this.humanPlayer.y, 'AI:', this.aiAgent.x, this.aiAgent.y);
+          }
+          frameCount++;
+
+          await this.battle.update(16); // ~60fps - AWAIT async operation
 
           // Render split screen
           this.renderer.renderBattle(
@@ -427,9 +541,12 @@
 
           if (this.battle.active) {
             this.gameLoop = requestAnimationFrame(update);
+          } else {
+            console.log('Battle loop ended - battle.active is false');
           }
         };
 
+        console.log('Starting battle loop...');
         update();
       }
 
